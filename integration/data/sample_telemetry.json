@@ -1,0 +1,14 @@
+{
+  "lap": 18,
+  "tyre_wear": 74,
+  "tyre_compound": "Medium",
+  "fuel_level": 18,
+  "ers_percentage": 45,
+  "current_pace": 1.342,
+  "sector_1": 28.4,
+  "sector_2": 32.1,
+  "sector_3": 26.8,
+  "gap_to_ahead": 2.3,
+  "gap_to_behind": 4.1,
+  "position": 4
+}
