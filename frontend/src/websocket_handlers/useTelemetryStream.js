@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
+const TELEMETRY_WS_URL = import.meta.env.VITE_TELEMETRY_WS_URL || 'wss://exception-manhole-oxygen.ngrok-free.dev/ws'
+
 const FALLBACK_TELEMETRY = {
   speedKmh: 0,
   engineRpm: 0,
@@ -40,11 +42,10 @@ export default function useTelemetryStream() {
 
   const wsUrl = useMemo(() => {
     if (typeof window === 'undefined') {
-      return 'ws://localhost:8000/ws'
+      return TELEMETRY_WS_URL
     }
 
-    const isLocalHost = ['localhost', '127.0.0.1'].includes(window.location.hostname)
-    return isLocalHost ? 'ws://localhost:8000/ws' : 'wss://f1-strategy-simulator-p0l5.onrender.com/ws'
+    return TELEMETRY_WS_URL
   }, [])
 
   useEffect(() => {

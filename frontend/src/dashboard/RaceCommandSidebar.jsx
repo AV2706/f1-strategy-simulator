@@ -1,3 +1,5 @@
+const TELEMETRY_WS_URL = import.meta.env.VITE_TELEMETRY_WS_URL || 'wss://exception-manhole-oxygen.ngrok-free.dev/ws'
+
 const actions = [
   { label: 'Session mode', value: 'Practice' },
   { label: 'Fuel target', value: 'Auto' },
@@ -38,7 +40,7 @@ export default function RaceCommandSidebar({ connectionState = 'offline' }) {
             {connectionState}
           </span>
         </div>
-        <p className="mt-3 text-sm text-slate-400">WS feed: ws://localhost:8000/ws</p>
+        <p className="mt-3 text-sm text-slate-400">WS feed: {TELEMETRY_WS_URL}</p>
       </div>
 
       <div className="space-y-3">
