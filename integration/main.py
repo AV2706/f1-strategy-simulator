@@ -11,7 +11,7 @@ async def root():
     return {"status": "online", "message": "Telemetry API is running perfectly."}
 
 # Real-time WebSocket endpoint
-@app.websocket("/ws/telemetry")
+@app.websocket("/ws")
 async def websocket_telemetry(websocket: WebSocket):
     await websocket.accept()
     print("Frontend client connected to telemetry stream!")

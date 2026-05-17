@@ -20,7 +20,7 @@
 
     <script>
         // Connect to the FastAPI WebSocket server
-        const ws = new WebSocket("ws://localhost:8000/ws/telemetry");
+        const ws = new WebSocket("wss://exception-manhole-oxygen.ngrok-free.dev/ws");
 
         ws.onmessage = function(event) {
             // Parse the incoming JSON data
