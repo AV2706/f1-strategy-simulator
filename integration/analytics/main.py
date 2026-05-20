@@ -1,4 +1,7 @@
-from fastapi import FastAPI
+import asyncio
+import json
+import websockets
+from fastapi import FastAPI, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from analytics.recommendation_engine.recommender import StrategyRecommender
@@ -16,6 +19,51 @@ app.add_middleware(
 )
 
 recommender = StrategyRecommender()
+
+# ─── LIVE TELEMETRY STATE (Real-time memory) ────────
+live_car_data = {
+    "lap": 1,
+    "sector_times": [0.0, 0.0, 0.0],
+    "tyre_wear": 100,
+    "tyre_compound": "Medium",
+    "fuel_level": 100,
+    "ers_battery": 100,
+    "ers_deployed": 0,
+    "ers_harvested": 0,
+    "pace_delta": 0.0,
+    "position": 1,
+    "gap_to_leader": 0.0,
+    "traffic_ahead": False,
+    "speed": 0, 
+    "rpm": 0    
+}
+
+# ─── BACKGROUND WEBSOCKET LISTENER ─────────────────
+async def start_websocket_client():
+    url = "wss://backendserver-2eul.onrender.com/ws"
+    while True:
+        try:
+            print(f"Connecting to live F1 telemetry at {url}...")
+            async with websockets.connect(url) as websocket:
+                print("✅ Successfully connected to Abdul's F1 Car!")
+                while True:
+                    raw_data = await websocket.recv()
+                    incoming_data = json.loads(raw_data)
+                    
+                    global live_car_data
+                    live_car_data["speed"] = incoming_data.get("speed", live_car_data["speed"])
+                    live_car_data["tyre_wear"] = incoming_data.get("tyre_wear", live_car_data["tyre_wear"])
+                    live_car_data["ers_battery"] = incoming_data.get("ers", live_car_data["ers_battery"])
+                    
+                    
+        except Exception as e:
+            print(f"❌ Connection Error: {e}. Reconnecting in 3 seconds...")
+            await asyncio.sleep(3)
+
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(start_websocket_client())
+
 
 # ─── Models ────────────────────────────────────────
 
@@ -60,31 +108,13 @@ async def root():
 async def health():
     return {"status": "OK", "message": "Analytics Engine Running"}
 
-# ─── NEW: Live Telemetry Snapshot Endpoint ──────────
 @app.get("/api/telemetry/snapshot")
 async def telemetry_snapshot():
-    """
-    Live telemetry snapshot endpoint — Langflow HTTP node will fetch this
-    automatically and feed the JSON data directly into the prompt.
-    """
-    return {
-        "lap": 18,
-        "sector_times": [28.4, 32.1, 26.8],
-        "tyre_wear": 74,
-        "tyre_compound": "Medium",
-        "fuel_level": 18,
-        "ers_battery": 45,
-        "ers_deployed": 30,
-        "ers_harvested": 20,
-        "pace_delta": 0.08,
-        "position": 4,
-        "gap_to_leader": 2.3,
-        "traffic_ahead": True
-    }
+    
+    return live_car_data
 
 @app.post("/analyze")
 async def analyze_telemetry(data: TelemetryData):
-    """Telemetry data analyze karo aur strategy recommendations lo"""
     result = recommender.generate_recommendation(data.dict())
     ai_summary = get_ai_summary(result)
     result["ai_summary"] = ai_summary
@@ -92,12 +122,10 @@ async def analyze_telemetry(data: TelemetryData):
 
 @app.post("/simulate")
 async def simulate_scenario(data: SimulationData):
-    """What-If simulation scenarios analyze karo"""
     result = analyze_simulation(data.dict())
     return result
 
 @app.post("/pace-analysis")
 async def pace_analysis(data: PaceData):
-    """Multiple laps ka pace trend analyze karo"""
     result = compare_race_pace(data.laps)
     return result
