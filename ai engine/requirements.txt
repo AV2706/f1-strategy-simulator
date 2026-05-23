@@ -1,0 +1,29 @@
+# F1 Race Strategy Documentation System
+
+
+# ── Core Documentation ────────────────────────────────
+docling==2.93.0
+docling-core
+
+# ── Data Processing ───────────────────────────────────
+pandas
+
+# ── Data Visualization ────────────────────────────────
+matplotlib
+
+# ── AI Integration ────────────────────────────────────
+# Groq — For testing (as instructed)
+groq
+
+# IBM Granite 
+# ibm-watsonx-ai
+
+# ── Live Data & API ───────────────────────────────────
+# WebSocket connection (Frontend live telemetry)
+websockets
+
+# HTTP requests (Analytics API)
+requests
+
+# ── Async Support ─────────────────────────────────────
+asyncio
