@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-const TELEMETRY_WS_URL = import.meta.env.VITE_TELEMETRY_WS_URL || 'wss://backendserver-2eul.onrender.com/ws'
+const TELEMETRY_WS_URL = import.meta.env.VITE_TELEMETRY_WS_URL || 'wss://f1-strategy-simulator-p015.onrender.com/ws'
 
 const FALLBACK_TELEMETRY = {
   speedKmh: 0,
