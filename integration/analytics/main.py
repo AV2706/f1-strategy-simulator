@@ -40,7 +40,7 @@ live_car_data = {
 
 # ─── BACKGROUND WEBSOCKET LISTENER ─────────────────
 async def start_websocket_client():
-    url = "wss://backendserver-2eul.onrender.com/ws"
+    url = "wss://f1-strategy-simulator-p015.onrender.com/ws"
     while True:
         try:
             print(f"Connecting to live F1 telemetry at {url}...")
