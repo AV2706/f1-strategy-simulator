@@ -1,4 +1,3 @@
-# import safety_car  <-- Ise tabhi uncomment karna jab safety_car.py file bani ho
 import asyncio
 import json
 import random
@@ -7,7 +6,6 @@ from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(title="Race Simulator Telemetry API")
 
-# 🚨 IMPORTAT: CORS add karna zaroori hai taaki Vercel/Frontend connect kar sake
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], 
@@ -16,12 +14,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Basic health check route
 @app.get("/")
 async def root():
     return {"status": "online", "message": "Telemetry API is running perfectly."}
 
-# --- JSON API Endpoints ---
 @app.get("/api/race-results")
 async def get_race_results():
     return {
@@ -39,28 +35,24 @@ async def get_safety_car_status():
         "impact_on_strategy": "None"
     }
 
-# Real-time WebSocket endpoint (THE CORE ENGINE)
 @app.websocket("/ws")
 async def websocket_telemetry(websocket: WebSocket):
     await websocket.accept()
     print("Frontend client connected to telemetry stream!")
     try:
         while True:
-            # ✅ AI aur Frontend ke liye exact keys match kar di hain
             telemetry_data = {
                 "speed": random.randint(100, 330),
                 "rpm": random.randint(5000, 12500),
                 "gear": random.randint(1, 8),
                 "throttle": round(random.uniform(0.0, 100.0), 1),
-                "tyre_wear": random.randint(20, 100),  # AI needs this live
-                "ers": random.randint(10, 100),        # AI needs this live
+                "tyre_wear": random.randint(20, 100),  
+                "ers": random.randint(10, 100),        
                 "damage": random.randint(0, 10)
             }
             
-            # Sending the data as a JSON string
             await websocket.send_text(json.dumps(telemetry_data))
             
-            # Pause for 1 second before sending the next update
             await asyncio.sleep(1)
             
     except WebSocketDisconnect:
