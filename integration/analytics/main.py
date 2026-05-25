@@ -51,10 +51,13 @@ async def start_websocket_client():
                     incoming_data = json.loads(raw_data)
                     
                     global live_car_data
-                    live_car_data["speed"] = incoming_data.get("speed", live_car_data["speed"])
-                    live_car_data["tyre_wear"] = incoming_data.get("tyre_wear", live_car_data["tyre_wear"])
+                    # 🔥 FIXED KEYS TO MATCH RENDER'S LIVE DATA 🔥
+                    live_car_data["speed"] = incoming_data.get("speed_kmh", live_car_data["speed"])
+                    live_car_data["rpm"] = incoming_data.get("engine_rpm", live_car_data["rpm"])
+                    live_car_data["tyre_wear"] = incoming_data.get("tyreHealth", live_car_data["tyre_wear"])
+                    live_car_data["fuel_level"] = incoming_data.get("fuel", live_car_data["fuel_level"])
                     live_car_data["ers_battery"] = incoming_data.get("ers", live_car_data["ers_battery"])
-                    
+                    live_car_data["lap"] = incoming_data.get("lap", live_car_data["lap"])
                     
         except Exception as e:
             print(f"❌ Connection Error: {e}. Reconnecting in 3 seconds...")
@@ -110,7 +113,6 @@ async def health():
 
 @app.get("/api/telemetry/snapshot")
 async def telemetry_snapshot():
-    
     return live_car_data
 
 @app.post("/analyze")
