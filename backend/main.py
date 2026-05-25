@@ -1,5 +1,3 @@
-# main.py
-
 import asyncio
 import json
 import os
@@ -16,37 +14,30 @@ from traffic          import TrafficAnalysis
 
 app = FastAPI(title="F1 Race Simulator Telemetry API")
 
-# ── CORS — allow frontend to call /ai-insight ─────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # tighten to your Vercel/Netlify URL in production
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ── Engine instances ──────────────────────────────────────────────────────────
 tyre_engine    = TyreDegradation()
 pit_engine     = PitStrategy()
 safety_engine  = SafetyCarLogic()
 traffic_engine = TrafficAnalysis()
 
 
-# ── Health check ──────────────────────────────────────────────────────────────
 @app.get("/")
 async def root():
     return {"status": "online", "message": "F1 Telemetry API is running!"}
 
 
-# ── AI Insight endpoint — API key stays on server, never in browser ───────────
+# ── Groq AI Insight — key safe on server ──────────────────────────────────────
 @app.post("/ai-insight")
 async def ai_insight(payload: dict):
-    """
-    Frontend sends telemetry snapshot here.
-    We call Anthropic API with the secret key (Render env var).
-    """
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    api_key = os.environ.get("GROQ_API_KEY", "")
     if not api_key:
-        return {"insight": "AI unavailable — ANTHROPIC_API_KEY not set on server."}
+        return {"insight": "AI unavailable — GROQ_API_KEY not set on server."}
 
     prompt = payload.get("prompt", "")
     if not prompt:
@@ -55,27 +46,25 @@ async def ai_insight(payload: dict):
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
             response = await client.post(
-                "https://api.anthropic.com/v1/messages",
+                "https://api.groq.com/openai/v1/chat/completions",
                 headers={
-                    "x-api-key":         api_key,
-                    "anthropic-version": "2023-06-01",
-                    "Content-Type":      "application/json",
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type":  "application/json",
                 },
                 json={
-                    "model":      "claude-sonnet-4-20250514",
+                    "model":      "llama-3.3-70b-versatile",
                     "max_tokens": 150,
                     "messages":   [{"role": "user", "content": prompt}],
                 },
             )
         data    = response.json()
-        insight = data["content"][0]["text"]
+        insight = data["choices"][0]["message"]["content"]
         return {"insight": insight}
 
     except Exception as e:
         return {"insight": f"AI error: {str(e)}"}
 
 
-# ── WebSocket telemetry stream ─────────────────────────────────────────────────
 @app.websocket("/ws")
 async def websocket_telemetry(websocket: WebSocket):
     await websocket.accept()
