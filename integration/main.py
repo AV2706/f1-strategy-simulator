@@ -8,6 +8,7 @@ app = FastAPI(title="Race Simulator Telemetry API")
 async def root():
     return {"status": "online", "message": "Telemetry API is running perfectly."}
 
+# URL YAHAN NAHI AAYEGA! Bas "/ws" hi darwaza hai.
 @app.websocket("/ws")
 async def websocket_telemetry(websocket: WebSocket):
     await websocket.accept()
