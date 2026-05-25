@@ -2,25 +2,28 @@ import { lazy, Suspense, useEffect, useState } from 'react'
 import RaceCommandSidebar from './RaceCommandSidebar'
 import useTelemetryStream from '../websocket_handlers/useTelemetryStream'
 
-const LiveTelemetryDashboard = lazy(() => import('../telemetry_panels/LiveTelemetryDashboard'))
-
-// ── Backend URL — single source of truth ─────────────────────────────────────
+// ── Backend URL ───────────────────────────────────────────────────────────────
 const BACKEND_URL =
   import.meta.env.VITE_BACKEND_URL || 'https://backendserver-2eul.onrender.com'
 
-// ── AI Insight — calls our backend /ai-insight (API key is safe on server) ───
+const LiveTelemetryDashboard = lazy(() => import('../telemetry_panels/LiveTelemetryDashboard'))
+
+// ── Groq AI Insight — via backend proxy (key never in browser) ────────────────
 async function fetchAiInsight(telemetry, tyreWear, ersBattery, lap) {
   try {
     const prompt = `You are an F1 race engineer AI. Analyze this live telemetry and give a short, precise tactical insight (max 2 sentences):
-- Lap: ${lap}
-- Speed: ${telemetry.speedKmh} km/h
-- Engine RPM: ${telemetry.engineRpm}
+- Lap: ${lap} / ${telemetry.total_laps ?? 57}
+- Speed: ${telemetry.speed_kmh ?? telemetry.speedKmh} km/h
+- Engine RPM: ${telemetry.engine_rpm ?? telemetry.engineRpm}
 - Gear: ${telemetry.gear}
-- Throttle: ${telemetry.throttlePercent}%
+- Throttle: ${telemetry.throttle_percent ?? telemetry.throttlePercent}%
 - ERS Battery: ${ersBattery}%
 - Tyre Wear: ${tyreWear}%
-- ERS Deploy: ${telemetry.ersDeploy}%
-Give a direct race engineering recommendation.`
+- Tyre Compound: ${telemetry.compound}
+- Tyre Age: ${telemetry.tyre_age} laps
+- Gap to Leader: ${telemetry.gap_to_leader?.toFixed(3)}s
+- Fuel Remaining: ${telemetry.fuel_remaining} kg
+Give a direct, specific race engineering recommendation.`
 
     const response = await fetch(`${BACKEND_URL}/ai-insight`, {
       method:  'POST',
@@ -32,27 +35,35 @@ Give a direct race engineering recommendation.`
     return data?.insight || null
 
   } catch (err) {
-    console.warn('AI insight fetch failed:', err)
+    console.warn('Groq AI insight fetch failed:', err)
     return null
   }
 }
 
 // ── Build snapshot from live telemetry ───────────────────────────────────────
 function buildSnapshot(telemetry, history, aiInsight, lapNumber) {
-  const basePace   = Math.max(84.2, 95 - telemetry.speedKmh / 18)
+  const speedKmh   = telemetry.speed_kmh    ?? telemetry.speedKmh    ?? 0
+  const engineRpm  = telemetry.engine_rpm   ?? telemetry.engineRpm   ?? 0
+  const throttle   = telemetry.throttle_percent ?? telemetry.throttlePercent ?? 0
+  const ersBatt    = telemetry.ers_battery  ?? telemetry.ers          ?? 100
+  const ersDepl    = telemetry.ers_deploy   ?? telemetry.ersDeploy    ?? 0
+
+  const basePace   = Math.max(84.2, 95 - speedKmh / 18)
   const sectorTime = `${Math.floor(basePace / 60)}:${(basePace % 60).toFixed(3).padStart(6, '0')}`
 
   const paceTrend = history.map((sample, index) => {
     const lap     = lapNumber - history.length + index + 1
     const pace    = Number((basePace + (sample - 50) * 0.03).toFixed(1))
     const sector1 = Number((30.8 + (sample - 50) * 0.01).toFixed(1))
-    const sector2 = Number((29.4 + (telemetry.throttlePercent - 50) * 0.01).toFixed(1))
-    const sector3 = Number((30.5 + (telemetry.engineRpm - 9000) / 1800).toFixed(1))
+    const sector2 = Number((29.4 + (throttle - 50) * 0.01).toFixed(1))
+    const sector3 = Number((30.5 + (engineRpm - 9000) / 1800).toFixed(1))
     return { lap, pace, sector1, sector2, sector3 }
   })
 
-  const tyreWear   = Math.min(100, Math.round(18 + telemetry.throttlePercent * 0.22 + (history.at(-1) ?? 50) * 0.15))
-  const ersBattery = Math.max(5,   Math.round(100 - telemetry.throttlePercent * 0.38 - telemetry.speedKmh * 0.04))
+  // Use tyre_wear directly from backend if available
+  const tyreWear   = telemetry.tyre_wear
+    ?? Math.min(100, Math.round(18 + throttle * 0.22 + (history.at(-1) ?? 50) * 0.15))
+  const ersBattery = Math.max(5, Math.round(ersBatt))
 
   const fallbackInsight = tyreWear > 42
     ? 'Tyre overheating risk detected in the rear axle. Recommend a short lift-and-coast window.'
@@ -74,17 +85,18 @@ export default function DashboardShell() {
   const [lastAiLap, setLastAiLap] = useState(0)
 
   const lapNumber  = telemetry.lap ?? Math.max(1, history.length + 1)
-  const tyreWear   = Math.min(100, Math.round(18 + telemetry.throttlePercent * 0.22 + (history.at(-1) ?? 50) * 0.15))
-  const ersBattery = Math.max(5,   Math.round(100 - telemetry.throttlePercent * 0.38 - telemetry.speedKmh * 0.04))
+  const tyreWear   = telemetry.tyre_wear
+    ?? Math.min(100, Math.round(18 + (telemetry.throttle_percent ?? 0) * 0.22 + (history.at(-1) ?? 50) * 0.15))
+  const ersBattery = Math.max(5, Math.round(telemetry.ers_battery ?? telemetry.ers ?? 100))
 
-  // ── Fetch AI insight every 5 laps when live ───────────────────────────────
+  // ── Fetch Groq AI insight every 5 laps ───────────────────────────────────
   useEffect(() => {
     if (connectionState !== 'live') return
-    if (telemetry.speedKmh === 0)   return
+    if ((telemetry.speed_kmh ?? telemetry.speedKmh ?? 0) === 0) return
     if (lapNumber - lastAiLap < 5 && lastAiLap !== 0) return
 
     setLastAiLap(lapNumber)
-    setAiInsight('Analyzing telemetry...')
+    setAiInsight('⚡ Analyzing telemetry with Groq AI...')
 
     fetchAiInsight(telemetry, tyreWear, ersBattery, lapNumber).then((insight) => {
       if (insight) {
@@ -112,7 +124,7 @@ export default function DashboardShell() {
               <div className="text-xs uppercase tracking-[0.28em] text-slate-500">Race Command Center</div>
               <h2 className="mt-1 text-2xl font-semibold tracking-tight text-slate-50">Telemetry Dashboard</h2>
               <p className="mt-1 text-sm text-slate-400">
-                Live race simulation — AI insights refresh every 5 laps.
+                Live race simulation — Groq AI insights refresh every 5 laps.
               </p>
             </div>
 
@@ -128,7 +140,7 @@ export default function DashboardShell() {
               <div className="rounded-xl border border-carbon-700 bg-carbon-900 px-3 py-2 text-center">
                 <div className="text-[11px] uppercase tracking-[0.2em] text-slate-500">Status</div>
                 <div className={`mt-1 ${connectionState === 'live' ? 'text-ers' : 'text-slate-400'}`}>
-                  {connectionState === 'live'       ? 'Live'
+                  {connectionState === 'live'         ? 'Live'
                    : connectionState === 'connecting' ? 'Connecting...'
                    : connectionState === 'finished'   ? 'Finished 🏁'
                    : 'Offline'}
