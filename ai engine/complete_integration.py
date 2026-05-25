@@ -22,8 +22,8 @@ os.makedirs("documentation/simulator_reports",   exist_ok=True)
 load_dotenv()
 # ── API Configuration ─────────────────────────────────
 ANALYTICS_IP = "192.168.18.76" 
-BACKEND_URL  = "https://backendserver-2eul.onrender.com" 
-WS_URL       = "wss://backendserver-2eul.onrender.com/ws"
+BACKEND_URL  = "https://f1-strategy-simulator-p015.onrender.com" 
+WS_URL       = "wss://f1-strategy-simulator-p015.onrender.com/ws"
 # ── Groq Setup ───
 api_key = os.getenv("GROQ_API_KEY")
 groq_client = Groq(api_key=api_key)
@@ -105,7 +105,7 @@ def ws_thread():
 # STEP 2 — FETCH LIVE DATA FROM BACKEND (Abdul - Ngrok)
 # ════════════════════════════════════════════════════════
 def fetch_backend_data():
-    print("\n[Backend] Connecting to Abdul's API...")
+    print("\n[Backend] Connecting to API...")
 
     telemetry_payload = {
         "lap": 18, "sector_times": [28.5, 32.1, 29.8],
