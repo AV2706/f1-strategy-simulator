@@ -2,7 +2,11 @@
 
 import asyncio
 import json
+import os
+
+import httpx
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
 
 from telemetry_engine import TelemetrySimulator
 from tyre_strategy    import TyreDegradation
@@ -12,6 +16,14 @@ from traffic          import TrafficAnalysis
 
 app = FastAPI(title="F1 Race Simulator Telemetry API")
 
+# ── CORS — allow frontend to call /ai-insight ─────────────────────────────────
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],   # tighten to your Vercel/Netlify URL in production
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # ── Engine instances ──────────────────────────────────────────────────────────
 tyre_engine    = TyreDegradation()
 pit_engine     = PitStrategy()
@@ -19,26 +31,63 @@ safety_engine  = SafetyCarLogic()
 traffic_engine = TrafficAnalysis()
 
 
+# ── Health check ──────────────────────────────────────────────────────────────
 @app.get("/")
 async def root():
     return {"status": "online", "message": "F1 Telemetry API is running!"}
 
 
+# ── AI Insight endpoint — API key stays on server, never in browser ───────────
+@app.post("/ai-insight")
+async def ai_insight(payload: dict):
+    """
+    Frontend sends telemetry snapshot here.
+    We call Anthropic API with the secret key (Render env var).
+    """
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        return {"insight": "AI unavailable — ANTHROPIC_API_KEY not set on server."}
+
+    prompt = payload.get("prompt", "")
+    if not prompt:
+        return {"insight": "No prompt received."}
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key":         api_key,
+                    "anthropic-version": "2023-06-01",
+                    "Content-Type":      "application/json",
+                },
+                json={
+                    "model":      "claude-sonnet-4-20250514",
+                    "max_tokens": 150,
+                    "messages":   [{"role": "user", "content": prompt}],
+                },
+            )
+        data    = response.json()
+        insight = data["content"][0]["text"]
+        return {"insight": insight}
+
+    except Exception as e:
+        return {"insight": f"AI error: {str(e)}"}
+
+
+# ── WebSocket telemetry stream ─────────────────────────────────────────────────
 @app.websocket("/ws")
 async def websocket_telemetry(websocket: WebSocket):
     await websocket.accept()
     print("✅ Frontend connected!")
 
-    # Fresh simulator per connection so every session starts from lap 1
     sim = TelemetrySimulator(total_laps=57, compound="SOFT")
 
     try:
         while sim.lap <= sim.total_laps:
 
-            # ── 1. Real telemetry from physics engine ─────────────────────
             data = sim.generate_lap_data(driver_name="Max Verstappen")
 
-            # ── 2. Pit window recommendation ──────────────────────────────
             pit_window = pit_engine.optimal_pit_window(
                 current_lap = sim.lap,
                 tyre_age    = sim.tyre_age,
@@ -47,7 +96,6 @@ async def websocket_telemetry(websocket: WebSocket):
                 tyre_engine = tyre_engine,
             )
 
-            # ── 3. Traffic prediction after hypothetical pit stop ─────────
             traffic = traffic_engine.predict_rejoin(
                 pit_loss_sec   = 22.0,
                 gap_ahead      = data["gap_to_leader"],
@@ -55,26 +103,23 @@ async def websocket_telemetry(websocket: WebSocket):
                 laps_remaining = sim.total_laps - sim.lap,
             )
 
-            # ── 4. Combine everything and send ────────────────────────────
             payload = {
                 **data,
-                "optimal_pit_lap":  pit_window["optimal_pit_lap"],
-                "latest_safe_lap":  pit_window["latest_safe_lap"],
-                "pit_urgency":      pit_window["urgency"],
-                "air_condition":    traffic["air_condition"],
-                "laps_remaining":   sim.total_laps - sim.lap,
+                "optimal_pit_lap": pit_window["optimal_pit_lap"],
+                "latest_safe_lap": pit_window["latest_safe_lap"],
+                "pit_urgency":     pit_window["urgency"],
+                "air_condition":   traffic["air_condition"],
+                "laps_remaining":  sim.total_laps - sim.lap,
             }
 
             await websocket.send_text(json.dumps(payload))
-
             sim.lap += 1
             await asyncio.sleep(1)
 
-        # ── Race finished ─────────────────────────────────────────────────
         await websocket.send_text(json.dumps({
-            "status":      "RACE_FINISHED",
-            "message":     "Chequered flag! 🏁",
-            "total_laps":  sim.total_laps,
+            "status":     "RACE_FINISHED",
+            "message":    "Chequered flag! 🏁",
+            "total_laps": sim.total_laps,
         }))
 
     except WebSocketDisconnect:
