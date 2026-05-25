@@ -1,60 +1,86 @@
 import asyncio
 import json
-import random
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 app = FastAPI(title="Race Simulator Telemetry API")
 
-# Basic health check route
 @app.get("/")
 async def root():
     return {"status": "online", "message": "Telemetry API is running perfectly."}
 
-# Real-time WebSocket endpoint
 @app.websocket("/ws")
 async def websocket_telemetry(websocket: WebSocket):
     await websocket.accept()
-    print("Frontend client connected to telemetry stream!")
+    print("Frontend client connected!")
     try:
-        # Starting values (Loop ke bahar)
         current_speed = 100
-        current_tyre = 99.0
-        current_fuel = 95.0
+        current_tyre  = 99.0
+        current_fuel  = 95.0
+        current_ers   = 100.0
+        current_lap   = 1        # lap 1 se shuru, badhega
+        lap_distance  = 0        # 0-100 track progress
 
         while True:
-            # 1. Speed dheere-dheere badhegi (acceleration)
-            current_speed += random.randint(2, 15) 
-            
-            # Agar speed 320 cross kare, toh break maro!
-            if current_speed > 320:
-                current_speed = random.randint(100, 130)
-                
-            # 2. Gear automatic speed ke hisaab se shift hoga
-            current_gear = max(1, min(8, int(current_speed / 40) + 1))
-            
-            # 3. Tyre aur Fuel dheere-dheere drop honge (AI Insights ke liye)
-            current_tyre -= 0.1
-            current_fuel -= 0.05
-            if current_tyre < 0: current_tyre = 0
-            if current_fuel < 0: current_fuel = 0
+            # Speed physics
+            current_speed += 5
+            lap_distance  += 3
 
-            # 4. Final Data jo Frontend aur AI ko jayega
+            # Braking zone simulate karein
+            if lap_distance >= 85:
+                current_speed = max(80, current_speed - 40)
+
+            if lap_distance >= 100:
+                lap_distance  = 0
+                current_lap  += 1   # Lap complete
+
+            if current_lap > 57:
+                await websocket.send_text(json.dumps({
+                    "status": "RACE_FINISHED", "message": "Chequered flag! 🏁"
+                }))
+                break
+
+            if current_speed > 320:
+                current_speed = 110
+
+            # Gear
+            current_gear = max(1, min(8, int(current_speed / 40) + 1))
+
+            # Throttle — speed se calculate, random nahi
+            if current_speed < 200:
+                throttle = round(60 + (current_speed / 200) * 40, 1)
+            elif current_speed > 280:
+                throttle = round(100 - (current_speed - 280) * 2, 1)
+            else:
+                throttle = 100.0
+            throttle = max(0, min(100, throttle))
+
+            # Tyre & Fuel drop
+            current_tyre = max(0, round(current_tyre - 0.1, 1))
+            current_fuel = max(0, round(current_fuel - 0.05, 1))
+
+            # ERS — regen on braking, use on acceleration
+            if current_speed > 250:
+                current_ers = max(0,   round(current_ers - 1.5, 1))
+            else:
+                current_ers = min(100, round(current_ers + 0.8, 1))
+
+            # RPM — gear aur speed se
+            rpm = int(5000 + (current_speed % 40) * 187)
+            rpm = max(5000, min(12500, rpm))
+
             telemetry_data = {
-                "speed_kmh": int(current_speed),
-                "engine_rpm": int(7000 + (current_speed % 40) * 100),
-                "gear": int(current_gear),
-                "throttle_percent": round(random.uniform(70.0, 100.0) if current_speed < 300 else random.uniform(10.0, 30.0), 1),
-                "lap": 18,
-                "tyreHealth": round(current_tyre, 1),
-                "fuel": round(current_fuel, 1),
-                "ers": random.randint(60, 90)
+                "speed_kmh":        int(current_speed),
+                "engine_rpm":       rpm,
+                "gear":             int(current_gear),
+                "throttle_percent": throttle,
+                "lap":              current_lap,
+                "tyreHealth":       current_tyre,
+                "fuel":             current_fuel,
+                "ers":              current_ers
             }
 
-            # Data ko JSON format me frontend ko bhejna
             await websocket.send_text(json.dumps(telemetry_data))
-            
-            # Har 1 second me update bhejo
             await asyncio.sleep(1)
 
     except WebSocketDisconnect:
-        print("Frontend client disconnected.")
+        print("Client disconnected.")
