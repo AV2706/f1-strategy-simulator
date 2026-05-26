@@ -1,4 +1,4 @@
-const TELEMETRY_WS_URL = import.meta.env.VITE_TELEMETRY_WS_URL || 'wss://backendserver-2eul.onrender.com//ws'
+const TELEMETRY_WS_URL = import.meta.env.VITE_TELEMETRY_WS_URL || 'wss://backendserver-production-d286.up.railway.app/ws'
 
 const actions = [
   { label: 'Session mode', value: 'Practice' },
