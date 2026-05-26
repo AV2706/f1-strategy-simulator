@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 const TELEMETRY_WS_URL = import.meta.env.VITE_TELEMETRY_WS_URL || 'wss://backendserver-production-d286.up.railway.app/ws'
 
@@ -29,7 +29,6 @@ function toTelemetryFrame(raw) {
     tireTempFrontRight: Number(raw.tire_temp_fr        ?? 94),
     tireTempRearLeft:   Number(raw.tire_temp_rl        ?? 88),
     tireTempRearRight:  Number(raw.tire_temp_rr        ?? 89),
-    // Extra fields for DashboardShell
     lap:                Number(raw.lap                 ?? 0),
     total_laps:         Number(raw.total_laps          ?? 57),
     tyre_wear:          Number(raw.tyre_wear           ?? 0),
@@ -55,28 +54,20 @@ export default function useTelemetryStream() {
   const [connectionState, setConnectionState] = useState('offline')
   const [history,         setHistory]         = useState(FALLBACK_HISTORY)
 
-  const wsRef      = useRef(null)
-  const retryRef   = useRef(null)
-  const cancelRef  = useRef(false)
-
-  const wsUrl = TELEMETRY_WS_URL
+  const wsRef     = useRef(null)
+  const retryRef  = useRef(null)
+  const cancelRef = useRef(false)
 
   function connect() {
     if (cancelRef.current) return
 
-    // Wake up backend first via HTTP ping
-    fetch(wsUrl.replace('wss://', 'https://').replace('/ws', ''))
-      .catch(() => {}) // ignore errors — just wake it up
-
     try {
-      const ws = new WebSocket(wsUrl)
+      const ws = new WebSocket(TELEMETRY_WS_URL)
       wsRef.current = ws
-      setConnectionState('connecting')
 
       ws.onopen = () => {
         if (!cancelRef.current) {
           setConnectionState('live')
-          // Clear any pending retry
           if (retryRef.current) {
             clearTimeout(retryRef.current)
             retryRef.current = null
@@ -88,9 +79,8 @@ export default function useTelemetryStream() {
         try {
           const parsed = JSON.parse(event.data)
 
-          // Race finished — restart after 3 seconds
+          // Race finished — silently reconnect, no status flicker
           if (parsed.status === 'RACE_FINISHED') {
-            setConnectionState('finished')
             retryRef.current = setTimeout(() => {
               if (!cancelRef.current) connect()
             }, 3000)
@@ -108,33 +98,32 @@ export default function useTelemetryStream() {
             ])
           }
         } catch {
-          if (!cancelRef.current) setConnectionState('degraded')
+          // ignore parse errors silently
         }
       }
 
       ws.onerror = () => {
-        if (!cancelRef.current) setConnectionState('degraded')
+        // ignore — onclose will handle reconnect
       }
 
       ws.onclose = () => {
         if (!cancelRef.current) {
-          setConnectionState('offline')
-          // Auto reconnect after 3 seconds
+          // NO status change — no flickering!
           retryRef.current = setTimeout(() => {
             if (!cancelRef.current) connect()
-          }, 3000)
+          }, 2000)
         }
       }
     } catch {
-      setConnectionState('offline')
       retryRef.current = setTimeout(() => {
         if (!cancelRef.current) connect()
-      }, 3000)
+      }, 2000)
     }
   }
 
   useEffect(() => {
     cancelRef.current = false
+    setConnectionState('connecting')
     connect()
 
     return () => {
@@ -149,4 +138,3 @@ export default function useTelemetryStream() {
   return { telemetry, history, connectionState }
 }
 
-   
