@@ -32,7 +32,6 @@ async def root():
     return {"status": "online", "message": "F1 Telemetry API is running!"}
 
 
-# ── Groq AI Insight — key safe on server ──────────────────────────────────────
 @app.post("/ai-insight")
 async def ai_insight(payload: dict):
     api_key = os.environ.get("GROQ_API_KEY", "")
@@ -70,46 +69,49 @@ async def websocket_telemetry(websocket: WebSocket):
     await websocket.accept()
     print("✅ Frontend connected!")
 
-    sim = TelemetrySimulator(total_laps=57, compound="SOFT")
+    while True:  # Race khatam hone ke baad restart karta hai
+        sim = TelemetrySimulator(total_laps=57, compound="SOFT")
 
-    try:
-        while sim.lap <= sim.total_laps:
+        try:
+            while sim.lap <= sim.total_laps:
+                data = sim.generate_lap_data(driver_name="Max Verstappen")
 
-            data = sim.generate_lap_data(driver_name="Max Verstappen")
+                pit_window = pit_engine.optimal_pit_window(
+                    current_lap = sim.lap,
+                    tyre_age    = sim.tyre_age,
+                    compound    = sim.compound,
+                    total_laps  = sim.total_laps,
+                    tyre_engine = tyre_engine,
+                )
 
-            pit_window = pit_engine.optimal_pit_window(
-                current_lap = sim.lap,
-                tyre_age    = sim.tyre_age,
-                compound    = sim.compound,
-                total_laps  = sim.total_laps,
-                tyre_engine = tyre_engine,
-            )
+                traffic = traffic_engine.predict_rejoin(
+                    pit_loss_sec   = 22.0,
+                    gap_ahead      = data["gap_to_leader"],
+                    gap_behind     = data["gap_to_leader"] + 3.5,
+                    laps_remaining = sim.total_laps - sim.lap,
+                )
 
-            traffic = traffic_engine.predict_rejoin(
-                pit_loss_sec   = 22.0,
-                gap_ahead      = data["gap_to_leader"],
-                gap_behind     = data["gap_to_leader"] + 3.5,
-                laps_remaining = sim.total_laps - sim.lap,
-            )
+                payload = {
+                    **data,
+                    "optimal_pit_lap": pit_window["optimal_pit_lap"],
+                    "latest_safe_lap": pit_window["latest_safe_lap"],
+                    "pit_urgency":     pit_window["urgency"],
+                    "air_condition":   traffic["air_condition"],
+                    "laps_remaining":  sim.total_laps - sim.lap,
+                }
 
-            payload = {
-                **data,
-                "optimal_pit_lap": pit_window["optimal_pit_lap"],
-                "latest_safe_lap": pit_window["latest_safe_lap"],
-                "pit_urgency":     pit_window["urgency"],
-                "air_condition":   traffic["air_condition"],
-                "laps_remaining":  sim.total_laps - sim.lap,
-            }
+                await websocket.send_text(json.dumps(payload))
+                sim.lap += 1
+                await asyncio.sleep(1)
 
-            await websocket.send_text(json.dumps(payload))
-            sim.lap += 1
-            await asyncio.sleep(1)
+            # Race khatam — 3 second baad nayi race shuru
+            await websocket.send_text(json.dumps({
+                "status":     "RACE_FINISHED",
+                "message":    "Chequered flag! 🏁",
+                "total_laps": sim.total_laps,
+            }))
+            await asyncio.sleep(3)
 
-        await websocket.send_text(json.dumps({
-            "status":     "RACE_FINISHED",
-            "message":    "Chequered flag! 🏁",
-            "total_laps": sim.total_laps,
-        }))
-
-    except WebSocketDisconnect:
-        print("❌ Client disconnected.")
+        except WebSocketDisconnect:
+            print("❌ Client disconnected.")
+            return
